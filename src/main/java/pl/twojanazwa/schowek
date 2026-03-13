@@ -1,0 +1,134 @@
+package pl.twojanazwa;
+
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
+
+import java.util.*;
+
+public class Main extends JavaPlugin implements Listener, CommandExecutor {
+
+    // Mapa przechowująca schowek: UUID -> (Material -> Ilość)
+    private final Map<UUID, Map<Material, Integer>> storage = new HashMap<>();
+
+    // Limity
+    private final int LIMIT_KOX = 2;
+    private final int LIMIT_REFIL = 8;
+    private final int LIMIT_PERLA = 3;
+
+    @Override
+    public void onEnable() {
+        Bukkit.getPluginManager().registerEvents(this, this);
+        getCommand("schowek").setExecutor(this);
+        
+        // Timer sprawdzający limity co sekundę (na wypadek podniesienia przedmiotów)
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    checkLimits(p);
+                }
+            }
+        }.runTaskTimer(this, 0L, 20L);
+    }
+
+    private void checkLimits(Player p) {
+        UUID uuid = p.getUniqueId();
+        storage.putIfAbsent(uuid, new HashMap<>());
+        Map<Material, Integer> playerStorage = storage.get(uuid);
+
+        manageItem(p, Material.ENCHANTED_GOLDEN_APPLE, LIMIT_KOX, playerStorage);
+        manageItem(p, Material.GOLDEN_APPLE, LIMIT_REFIL, playerStorage);
+        manageItem(p, Material.ENDER_PEARL, LIMIT_PERLA, playerStorage);
+    }
+
+    private void manageItem(Player p, Material mat, int limit, Map<Material, Integer> store) {
+        int count = 0;
+        for (ItemStack is : p.getInventory().getContents()) {
+            if (is != null && is.getType() == mat) count += is.getAmount();
+        }
+
+        if (count > limit) {
+            int over = count - limit;
+            p.getInventory().removeItem(new ItemStack(mat, over));
+            store.put(mat, store.getOrDefault(mat, 0) + over);
+            p.sendMessage("§6§lSchowek: §7Nadmiar " + mat.name() + " (§e" + over + "§7) trafił do depozytu!");
+        }
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
+        if (!(sender instanceof Player)) return true;
+        openStorageMenu((Player) sender);
+        return true;
+    }
+
+    public void openStorageMenu(Player p) {
+        Inventory gui = Bukkit.createInventory(null, 27, "§8§lWirtualny Schowek");
+        Map<Material, Integer> store = storage.getOrDefault(p.getUniqueId(), new HashMap<>());
+
+        gui.setItem(11, createGuiItem(Material.ENCHANTED_GOLDEN_APPLE, "§6§lKOXY", store.getOrDefault(Material.ENCHANTED_GOLDEN_APPLE, 0)));
+        gui.setItem(13, createGuiItem(Material.GOLDEN_APPLE, "§e§lREFILE", store.getOrDefault(Material.GOLDEN_APPLE, 0)));
+        gui.setItem(15, createGuiItem(Material.ENDER_PEARL, "§d§lPERŁY", store.getOrDefault(Material.ENDER_PEARL, 0)));
+
+        p.openInventory(gui);
+    }
+
+    private ItemStack createGuiItem(Material mat, String name, int amount) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        meta.setDisplayName(name);
+        meta.setLore(Arrays.asList("§7Posiadasz w schowku: §e" + amount, "", "§aKliknij, aby wypłacić do limitu!"));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (!event.getView().getTitle().equals("§8§lWirtualny Schowek")) return;
+        event.setCancelled(true);
+
+        if (event.getCurrentItem() == null) return;
+        Player p = (Player) event.getWhoClicked();
+        Material mat = event.getCurrentItem().getType();
+        
+        withdrawItem(p, mat);
+        openStorageMenu(p); // Odśwież menu
+    }
+
+    private void withdrawItem(Player p, Material mat) {
+        Map<Material, Integer> store = storage.get(p.getUniqueId());
+        if (store == null || store.getOrDefault(mat, 0) <= 0) {
+            p.sendMessage("§cTwój schowek jest pusty!");
+            return;
+        }
+
+        int limit = (mat == Material.ENCHANTED_GOLDEN_APPLE) ? LIMIT_KOX : (mat == Material.GOLDEN_APPLE ? LIMIT_REFIL : LIMIT_PERLA);
+        int currentInInv = 0;
+        for (ItemStack is : p.getInventory().getContents()) {
+            if (is != null && is.getType() == mat) currentInInv += is.getAmount();
+        }
+
+        if (currentInInv >= limit) {
+            p.sendMessage("§cMasz już pełny limit w ekwipunku!");
+            return;
+        }
+
+        int toWithdraw = Math.min(limit - currentInInv, store.get(mat));
+        store.put(mat, store.get(mat) - toWithdraw);
+        p.getInventory().addItem(new ItemStack(mat, toWithdraw));
+        p.sendMessage("§aWypłacono §2" + toWithdraw + " §asprzedmioty ze schowka!");
+    }
+}
