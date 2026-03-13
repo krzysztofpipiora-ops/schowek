@@ -1,7 +1,7 @@
-name: SuperSchowek
+name: TwojaNazwaPluginu
 version: 1.0
 main: pl.twojanazwa.Main
 api-version: 1.20
 commands:
   schowek:
-    description: Otwiera menu schowka
+    description: Komenda od schowka
