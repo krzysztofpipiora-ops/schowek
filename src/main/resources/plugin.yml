@@ -1,7 +1,7 @@
-name: TwojaNazwaPluginu
+name: SupplyDropStorage
 version: 1.0
 main: pl.twojanazwa.Main
 api-version: 1.20
 commands:
   schowek:
-    description: Komenda od schowka
+    description: Otwiera menu schowka i depozytu
